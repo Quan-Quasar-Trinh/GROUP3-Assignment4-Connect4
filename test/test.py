@@ -1,12 +1,10 @@
 # connect4_v8.py
-# Connect 4 - PvP, AI, online for two machines with host IP display, threaded AI, save/load, winner highlight
-# Added random turn decider for online mode with 2-second notification, wait screen for P2, board blur during notification
+# Connect 4 - PvP, AI, network for two machines with host IP display, threaded AI, save/load, winner highlight
+# Added random turn decider for network mode with 2-second notification, wait screen for P2, board blur during notification
 # Requires Python 3.8+ and pygame
 # pip install pygame
-
 import pygame, sys, json, threading, socket, random, time
 from copy import deepcopy
-
 # ---------------- Config ----------------
 WIDTH, HEIGHT = 700, 700
 ROWS, COLS = 6, 7
@@ -15,13 +13,11 @@ RADIUS = int(SQUARE_SIZE * 0.4)
 FPS = 60
 SAVE_FILE = "saved_game.json"
 NET_BUF = 8192
-AUTO_SAVE_INTERVAL = 30  # Auto-save every 30 seconds
-
+AUTO_SAVE_INTERVAL = 30 # Auto-save every 30 seconds
 WHITE, BLACK, BLUE, RED, YELLOW, GRAY, GREEN, ORANGE = (
     (255,255,255), (10,10,10), (0,80,200), (220,40,40), (240,190,0),
     (200,200,200), (0,200,100), (255,140,0)
 )
-
 MSG_GAME_STATE = "GAME_STATE"
 MSG_PLAYER_MOVE = "PLAYER_MOVE"
 MSG_JOIN = "JOIN_REQUEST"
@@ -29,19 +25,17 @@ MSG_JOIN_ACK = "JOIN_ACK"
 MSG_REJECT = "MOVE_REJECTED"
 MSG_DISCONNECT = "DISCONNECT"
 MSG_ERROR = "ERROR"
-
 # ---------------- Utility Functions ----------------
 def get_local_ip():
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))  # Connect to Google's DNS server
+        s.connect(("8.8.8.8", 80)) # Connect to Google's DNS server
         ip = s.getsockname()[0]
         s.close()
         return ip
     except Exception as e:
         print(f"[NET] Error getting local IP: {e}")
-        return "127.0.0.1"  # Fallback to localhost
-
+        return "127.0.0.1" # Fallback to localhost
 # ---------------- GameState ----------------
 class GameState:
     def __init__(self, board=None, current_player=1, game_over=False, winner=0,
@@ -49,13 +43,13 @@ class GameState:
         self.board = board if board else [[0]*COLS for _ in range(ROWS)]
         self.current_player = current_player
         self.game_over = game_over
-        self.winner = winner  # 0: none, 1/2: winner, 3: draw
+        self.winner = winner # 0: none, 1/2: winner, 3: draw
         self.move_count = move_count
-        self.mode = mode  # LOCAL, AI, ONLINE_HOST, ONLINE_CLIENT
+        self.mode = mode # LOCAL, AI, NETWORK_HOST, NETWORK_CLIENT
         self.ai_level = ai_level
         self.last_move = None
         self.local_player = 1
-        self.first_player_decided = False  # Track if first player is set
+        self.first_player_decided = False # Track if first player is set
     def copy(self): return deepcopy(self)
     def to_json(self): return json.dumps(self.__dict__)
     @staticmethod
@@ -64,10 +58,8 @@ class GameState:
         gs = GameState()
         gs.__dict__.update(d)
         return gs
-
 # ---------------- Game Logic ----------------
 def valid_moves(gs): return [c for c in range(COLS) if gs.board[0][c] == 0]
-
 def make_move(gs, col, player):
     if col < 0 or col >= COLS or gs.board[0][col] != 0:
         raise ValueError("Invalid move")
@@ -87,7 +79,6 @@ def make_move(gs, col, player):
         new.game_over = True
         new.winner = 3
     return new, row
-
 def check_winner(board):
     for r in range(ROWS):
         for c in range(COLS - 3):
@@ -106,7 +97,6 @@ def check_winner(board):
             v = board[r][c]
             if v and v == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]: return v
     return 0
-
 # ---------------- AI ----------------
 def score_window(w, player):
     score, opp = 0, 2 if player == 1 else 1
@@ -115,7 +105,6 @@ def score_window(w, player):
     elif w.count(player) == 2 and w.count(0) == 2: score += 10
     if w.count(opp) == 3 and w.count(0) == 1: score -= 80
     return score
-
 def evaluate_board(board, player):
     score = 0
     center = [board[r][COLS//2] for r in range(ROWS)]
@@ -131,7 +120,6 @@ def evaluate_board(board, player):
     for r in range(3, ROWS):
         for c in range(COLS - 3): score += score_window([board[r-i][c+i] for i in range(4)], player)
     return score
-
 def minimax_ab(state, depth, alpha, beta, maximizing, ai_player):
     legal = valid_moves(state)
     if depth == 0 or state.game_over:
@@ -161,7 +149,6 @@ def minimax_ab(state, depth, alpha, beta, maximizing, ai_player):
             beta = min(beta, value)
             if alpha >= beta: break
         return value, best_col
-
 def ai_choose(gs):
     lvl = gs.ai_level.upper()
     legal = valid_moves(gs)
@@ -174,7 +161,6 @@ def ai_choose(gs):
         _, col = minimax_ab(gs.copy(), 5, -float('inf'), float('inf'), True, 2)
         return col if col is not None else random.choice(legal)
     return random.choice(legal)
-
 # ---------------- Networking ----------------
 class NetPeer:
     def __init__(self):
@@ -184,7 +170,6 @@ class NetPeer:
         self.running = False
         self.recv_callback = None
         self.lock = threading.Lock()
-
     def start_host(self, host_ip="0.0.0.0", port=50007):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -198,7 +183,6 @@ class NetPeer:
         except Exception as e:
             print(f"[NET] Host setup error: {e}")
             return False
-
     def accept_loop(self):
         try:
             self.conn, addr = self.sock.accept()
@@ -209,7 +193,6 @@ class NetPeer:
             self.recv_loop(self.conn)
         except Exception as e:
             print(f"[NET] Accept error: {e}")
-
     def start_client(self, server_ip, port=50007):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
@@ -224,7 +207,6 @@ class NetPeer:
         except Exception as e:
             print(f"[NET] Client connect error: {e}")
             return False
-
     def recv_loop(self, conn):
         try:
             while self.running:
@@ -252,7 +234,6 @@ class NetPeer:
             print("[NET] Connection closed")
             if self.recv_callback:
                 self.recv_callback({"type": MSG_DISCONNECT})
-
     def send_json(self, obj):
         if not self.conn or not self.running: return False
         try:
@@ -266,7 +247,6 @@ class NetPeer:
             print(f"[NET] Send error: {e}")
             self.running = False
             return False
-
     def stop(self):
         self.running = False
         try:
@@ -275,14 +255,13 @@ class NetPeer:
         except:
             pass
         print("[NET] Stopped")
-
 # ---------------- UI ----------------
-def draw_board(screen, gs, fonts, ai_thinking=False, instructions_text="", save_msg_time=0, error_msg="", host_ip="", 
+def draw_board(screen, gs, fonts, ai_thinking=False, instructions_text="", save_msg_time=0, error_msg="", host_ip="",
                first_player_time=0, waiting_for_p2=False):
     screen.fill(BLACK)
     pygame.draw.rect(screen, GRAY, (0, 0, WIDTH, SQUARE_SIZE))
     pygame.draw.rect(screen, BLUE, (0, SQUARE_SIZE, WIDTH, HEIGHT - SQUARE_SIZE))
-    
+   
     # Draw board circles
     for r in range(ROWS):
         for c in range(COLS):
@@ -291,32 +270,26 @@ def draw_board(screen, gs, fonts, ai_thinking=False, instructions_text="", save_
             v = gs.board[r][c]
             color = BLACK if v == 0 else RED if v == 1 else YELLOW
             pygame.draw.circle(screen, color, (x, y), RADIUS)
-    
+   
     # Header
     header_txt = f"Player {gs.current_player}'s turn"
     if gs.mode == "AI": header_txt += " | AI"
-    elif gs.mode == "ONLINE_HOST": header_txt += f" | Host (P1) | IP: {host_ip}"
-    elif gs.mode == "ONLINE_CLIENT": header_txt += " | Client (P2)"
+    elif gs.mode == "NETWORK_HOST": header_txt += f" | Host (P1) | IP: {host_ip}"
+    elif gs.mode == "NETWORK_CLIENT": header_txt += " | Client (P2)"
     text_surf = fonts['small'].render(header_txt, True, BLACK)
     screen.blit(text_surf, (10, 10))
-
     if instructions_text:
         inst_surf = fonts['small'].render(instructions_text, True, WHITE)
         screen.blit(inst_surf, (WIDTH - inst_surf.get_width() - 10, 10))
-
     if gs.last_move:
         col, row, pl = gs.last_move
         pygame.draw.circle(screen, GREEN, (col * SQUARE_SIZE + SQUARE_SIZE // 2, (row + 1) * SQUARE_SIZE + SQUARE_SIZE // 2), RADIUS // 2)
-
     if ai_thinking:
         screen.blit(fonts['small'].render("AI thinking...", True, ORANGE), (WIDTH - 140, 35))
-
     if save_msg_time and time.time() - save_msg_time < 2.0:
         render_center(screen, fonts, "Auto Saved!", HEIGHT - 40, GREEN)
-
     if error_msg:
         render_center(screen, fonts, error_msg, HEIGHT - 80, ORANGE)
-
     # Blur overlay during first player notification
     if first_player_time and time.time() - first_player_time < 2.0:
         # Semi-transparent dark overlay for blur effect
@@ -324,12 +297,11 @@ def draw_board(screen, gs, fonts, ai_thinking=False, instructions_text="", save_
         overlay.set_alpha(120)
         overlay.fill((20, 20, 40))
         screen.blit(overlay, (0, 0))
-        
+       
         # Display first player notification
         text = f"Player {gs.current_player} goes first!" if gs.current_player == gs.local_player else f"Opponent (Player {gs.current_player}) goes first!"
         color = RED if gs.current_player == 1 else YELLOW
         render_center(screen, fonts, text, HEIGHT // 2, color)
-
     # Waiting for P2 screen
     if waiting_for_p2:
         # Full overlay
@@ -339,12 +311,10 @@ def draw_board(screen, gs, fonts, ai_thinking=False, instructions_text="", save_
         screen.blit(overlay, (0, 0))
         render_center(screen, fonts, "Waiting for Player 2 to join...", HEIGHT // 2 - 40, WHITE)
         render_center(screen, fonts, f"Share this IP: {host_ip}", HEIGHT // 2 + 20, GREEN)
-        render_center(screen, fonts, "They must select 'Join Online'", HEIGHT // 2 + 60, GRAY)
-
+        render_center(screen, fonts, "They must select 'Join Network'", HEIGHT // 2 + 60, GRAY)
 def render_center(screen, fonts, text, y, color=WHITE):
     surf = fonts['med'].render(text, True, color)
     screen.blit(surf, (WIDTH // 2 - surf.get_width() // 2, y))
-
 # ---------------- Save/Load ----------------
 def save_game(gs):
     try:
@@ -354,13 +324,11 @@ def save_game(gs):
     except Exception as e:
         print(f"[SAVE] Error: {e}")
     return 0
-
 def load_game():
     try:
         with open(SAVE_FILE, "r") as f: return GameState.from_json(f.read())
     except:
         return None
-
 # ---------------- Winner Highlight ----------------
 def get_winning_positions(board):
     for r in range(ROWS):
@@ -380,7 +348,6 @@ def get_winning_positions(board):
             v = board[r][c]
             if v and v == board[r-1][c+1] == board[r-2][c+2] == board[r-3][c+3]: return [(r-i, c+i) for i in range(4)]
     return []
-
 def show_winner(screen, fonts, gs):
     overlay = pygame.Surface((WIDTH, HEIGHT))
     overlay.set_alpha(180)
@@ -389,9 +356,9 @@ def show_winner(screen, fonts, gs):
     for r, c in get_winning_positions(gs.board):
         pygame.draw.circle(screen, ORANGE, (c * SQUARE_SIZE + SQUARE_SIZE // 2, (r + 1) * SQUARE_SIZE + SQUARE_SIZE // 2), RADIUS, 5)
     if gs.winner == 1:
-        text, color = ("Host Wins!" if gs.mode == "ONLINE_HOST" else "Player 1 Wins!", RED)
+        text, color = ("Host Wins!" if gs.mode == "NETWORK_HOST" else "Player 1 Wins!", RED)
     elif gs.winner == 2:
-        text, color = ("Client Wins!" if gs.mode == "ONLINE_CLIENT" else "AI Wins!" if gs.mode == "AI" else "Player 2 Wins!", YELLOW)
+        text, color = ("Client Wins!" if gs.mode == "NETWORK_CLIENT" else "AI Wins!" if gs.mode == "AI" else "Player 2 Wins!", YELLOW)
     else:
         text, color = ("Draw!", GRAY)
     render_center(screen, fonts, text, HEIGHT // 2 - 20, color)
@@ -402,7 +369,6 @@ def show_winner(screen, fonts, gs):
         for event in pygame.event.get():
             if event.type == pygame.QUIT: pygame.quit(); sys.exit()
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN: waiting = False
-
 # ---------------- Network Handler ----------------
 def handle_network_message(msg, net, state_container, error_container, waiting_container):
     try:
@@ -431,17 +397,14 @@ def handle_network_message(msg, net, state_container, error_container, waiting_c
                 error_container['msg'] = "Invalid game state"
                 return
             new_state = GameState.from_json(js)
-            new_state.mode = "ONLINE_CLIENT" if not net.is_host else "ONLINE_HOST"
-            new_state.local_player = 2 if new_state.mode == "ONLINE_CLIENT" else 1
-
-            first_time = state_container.get('state') is None  # Only first time
+            new_state.mode = "NETWORK_CLIENT" if not net.is_host else "NETWORK_HOST"
+            new_state.local_player = 2 if new_state.mode == "NETWORK_CLIENT" else 1
+            first_time = state_container.get('state') is None # Only first time
             state_container['state'] = new_state
             print(f"[NET] Updated state: current_player={new_state.current_player}, local_player={new_state.local_player}")
             error_container['msg'] = ""
-
             if first_time:
-                state_container['first_player_time'] = time.time()  # Only show notification once
-
+                state_container['first_player_time'] = time.time() # Only show notification once
         elif typ == MSG_PLAYER_MOVE and net.is_host and s:
             col = msg.get("col")
             print(f"[NET] Host received move: col={col}, current_player={s.current_player}")
@@ -466,7 +429,7 @@ def handle_network_message(msg, net, state_container, error_container, waiting_c
             error_container['msg'] = "Disconnected from opponent"
             state_container['state'] = None
             state_container['first_player_time'] = 0
-            waiting_container['waiting_for_p2'] = False  # Reset waiting state
+            waiting_container['waiting_for_p2'] = False # Reset waiting state
         elif typ == MSG_ERROR:
             error_container['msg'] = f"Error: {msg.get('message')}"
             print(f"[NET] Error: {msg.get('message')}")
@@ -475,7 +438,6 @@ def handle_network_message(msg, net, state_container, error_container, waiting_c
     except Exception as e:
         print(f"[NET] Handler error: {e}")
         error_container['msg'] = "Network error"
-
 # ---------------- Text Input ----------------
 def get_text_input(screen, fonts, prompt, initial_text=""):
     input_text = initial_text
@@ -495,7 +457,6 @@ def get_text_input(screen, fonts, prompt, initial_text=""):
                     input_text += event.unicode
                 elif event.key == pygame.K_ESCAPE: return ""
     return input_text
-
 # ---------------- Main ----------------
 def main():
     pygame.init()
@@ -507,10 +468,9 @@ def main():
         'med': pygame.font.SysFont("arial", 28),
         'small': pygame.font.SysFont("arial", 18)
     }
-
     in_menu = True
     menu_idx = 0
-    menu_items = ["Play Local", "Play vs AI", "Host Online", "Join Online", "Continue Saved", "Quit"]
+    menu_items = ["Play Local", "Play vs AI", "Host Network", "Join Network", "Continue Saved", "Quit"]
     ai_options = ["EASY", "MED", "HARD"]
     ai_idx = 1
     join_ip = "192.168.1.100"
@@ -518,7 +478,7 @@ def main():
     host_port = 50007
     net = None
     state_container = {'state': None, 'first_player_time': 0}
-    waiting_container = {'waiting_for_p2': False}  # New: Track waiting state
+    waiting_container = {'waiting_for_p2': False} # New: Track waiting state
     error_container = {'msg': ""}
     ai_thinking = False
     ai_result = {'col': None}
@@ -526,12 +486,10 @@ def main():
     last_auto_save = 0
     auto_save_msg_time = 0
     host_ip = ""
-
     running = True
     while running:
         clock.tick(FPS)
         current_time = time.time()
-
         # --- Menu ---
         if in_menu:
             screen.fill(BLACK)
@@ -566,8 +524,8 @@ def main():
                             state_container['state'] = s
                             in_menu = False
                             last_auto_save = current_time
-                        elif choice == "Host Online":
-                            s = GameState(mode="ONLINE_HOST")
+                        elif choice == "Host Network":
+                            s = GameState(mode="NETWORK_HOST")
                             s.local_player = 1
                             net = NetPeer()
                             s.current_player = random.choice([1, 2])
@@ -577,15 +535,15 @@ def main():
                                 host_ip = get_local_ip()
                                 print(f"[NET] Host IP: {host_ip}")
                                 state_container['state'] = s
-                                waiting_container['waiting_for_p2'] = True  # Start waiting screen
+                                waiting_container['waiting_for_p2'] = True # Start waiting screen
                                 in_menu = False
                                 last_auto_save = current_time
                             else:
                                 error_container['msg'] = "Failed to start host"
-                        elif choice == "Join Online":
+                        elif choice == "Join Network":
                             join_ip = get_text_input(screen, fonts, "Enter Host IP (e.g., 192.168.1.100)", join_ip)
                             if not join_ip: continue
-                            s = GameState(mode="ONLINE_CLIENT")
+                            s = GameState(mode="NETWORK_CLIENT")
                             s.local_player = 2
                             net = NetPeer()
                             net.recv_callback = lambda m: handle_network_message(m, net, state_container, error_container, waiting_container)
@@ -606,7 +564,6 @@ def main():
                         elif choice == "Quit":
                             running = False
             continue
-
         # --- Game Loop ---
         gs = state_container.get('state')
         if gs is None:
@@ -615,17 +572,14 @@ def main():
             state_container['first_player_time'] = 0
             waiting_container['waiting_for_p2'] = False
             continue
-
         waiting_for_p2 = waiting_container.get('waiting_for_p2', False)
         instructions = "ESC:Menu | S:Save | Auto-save every 30s"
-
         # Block input during waiting screen
         if not waiting_for_p2:
             # Auto-save logic
             if current_time - last_auto_save >= AUTO_SAVE_INTERVAL and not gs.game_over:
                 auto_save_msg_time = save_game(gs)
                 last_auto_save = current_time
-
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
@@ -649,7 +603,7 @@ def main():
                             error_container['msg'] = ""
                         except Exception as e:
                             error_container['msg'] = str(e)
-                    elif gs.mode == "ONLINE_HOST" and gs.current_player == gs.local_player and net and net.running:
+                    elif gs.mode == "NETWORK_HOST" and gs.current_player == gs.local_player and net and net.running:
                         try:
                             gs, _ = make_move(gs, col, gs.current_player)
                             state_container['state'] = gs
@@ -658,7 +612,7 @@ def main():
                             error_container['msg'] = ""
                         except Exception as e:
                             error_container['msg'] = str(e)
-                    elif gs.mode == "ONLINE_CLIENT" and gs.current_player == gs.local_player and net and net.running:
+                    elif gs.mode == "NETWORK_CLIENT" and gs.current_player == gs.local_player and net and net.running:
                         try:
                             net.send_json({"type": MSG_PLAYER_MOVE, "col": col})
                             error_container['msg'] = ""
@@ -676,7 +630,6 @@ def main():
                         if net: net.stop(); net = None
                         state_container['first_player_time'] = 0
                         waiting_container['waiting_for_p2'] = False
-
         # --- AI Turn ---
         if gs.mode == "AI" and gs.current_player == 2 and not gs.game_over and not waiting_for_p2:
             if ai_thread is None:
@@ -698,12 +651,10 @@ def main():
                     error_container['msg'] = str(e)
                 ai_thread = None
                 ai_thinking = False
-
         # --- Draw ---
         draw_board(screen, gs, fonts, ai_thinking, instructions, auto_save_msg_time,
                    error_container['msg'], host_ip, state_container['first_player_time'], waiting_for_p2)
         pygame.display.flip()
-
         # --- Game Over ---
         if gs.game_over:
             save_game(gs)
@@ -717,10 +668,8 @@ def main():
             auto_save_msg_time = 0
             error_container['msg'] = ""
             host_ip = ""
-
     if net: net.stop()
     pygame.quit()
     sys.exit()
-
 if __name__ == "__main__":
     main()
